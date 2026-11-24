@@ -13,27 +13,65 @@ public static class BatteryService
 {
     private const int RazerVid = 0x1532;
     private const int RazerDeathAdderV3HyperSpeedPid = 0x00C5;
-
     private const int SteelSeriesVid = 0x1038;
     private const int SteelSeriesArctisNova7Pid = 0x22A1;
     private const string BatteryLevelKey = "{104EA319-6EE2-4701-BD47-8DDBF425BBE5} 2";
     private const string IsConnectedKey = "System.Devices.Aep.IsConnected";
 
-
-    public static async Task<List<PeripheralBattery>> GetAllBatteriesAync()
+    public static async Task<List<PeripheralBattery>> GetAllBatteriesAsync()
     {
+
+        var razerTask = Task.Run(ReadRazerMouseBattery);
+        var steelSeriesTask = Task.Run(ReadSteelSeriesHeadsetBattery);
+
+        //var bluetoothTask = GetWindowsReportedBatteriesAsync(); // use when bluetooth devices are connected
+
+        var hidResults = await Task.WhenAll(razerTask, steelSeriesTask);
+
         var results = new List<PeripheralBattery>();
-
-        // Razer DeathAdder V3 HyperSpeed (2.4ghz dongle)
-        var razer = ReadRazerMouseBattery();
-        if (razer != null) results.Add(razer);
-
-        // SteelSeries Arctis Nova 7 (2.4ghz dongle)
-        var steelSeries = ReadSteelSeriesHeadsetBattery();
-        if (steelSeries != null) results.Add(steelSeries);
-
+        foreach (var battery in hidResults)
+        {
+            if (battery != null)
+                results.Add(battery);
+        }
         return results;
     }
+
+    /// <summary>
+    /// Asynchronously retrieves battery information for supported peripheral devices.
+    /// </summary>
+    /// <remarks>Devices that are not detected or do not report battery information are omitted from the
+    /// result.</remarks>
+    /// <returns>A task that represents the asynchronous operation. The result contains battery information for detected Razer
+    /// mice and SteelSeries headsets.</returns> 
+    /*
+    public static async Task<List<PeripheralBattery>> GetAllBatteriesAsync()
+    {
+        var sw = Stopwatch.StartNew();
+        Debug.WriteLine("[Timing] Starting GetAllBatteriesAsync...");
+
+        // 1. Time the USB HID enumeration
+        var allHidDevices = await Task.Run(() => DeviceList.Local.GetHidDevices().ToList());
+        Debug.WriteLine($"[Timing] GetHidDevices() took {sw.ElapsedMilliseconds} ms ({allHidDevices.Count} devices)");
+
+        // 2. Time Razer
+        long tRazer = sw.ElapsedMilliseconds;
+        var razer = await Task.Run(() => ReadRazerMouseBattery());
+        Debug.WriteLine($"[Timing] Razer took {sw.ElapsedMilliseconds - tRazer} ms (Found: {razer is not null})");
+
+        // 3. Time SteelSeries
+        long tSs = sw.ElapsedMilliseconds;
+        var steelSeries = await Task.Run(() => ReadSteelSeriesHeadsetBattery());
+        Debug.WriteLine($"[Timing] SteelSeries took {sw.ElapsedMilliseconds - tSs} ms (Found: {steelSeries is not null})");
+
+        var results = new List<PeripheralBattery>();
+        if (razer is not null) results.Add(razer);
+        if (steelSeries is not null) results.Add(steelSeries);
+
+        Debug.WriteLine($"[Timing] Total: {sw.ElapsedMilliseconds} ms");
+        return results;
+    }
+    */
 
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern SafeFileHandle CreateFile(
@@ -79,7 +117,7 @@ public static class BatteryService
         request[7] = 0x07; // cmd class: power
         request[8] = 0x80; // cmd id: get battery level
 
-        // crc: XOR of byte 2..87 of the 90 byte payload (indices 3..88 here)
+        // cyclic redundancy check: XOR of byte 2..87 of the 90 byte payload (indices 3..88 here)
         byte crc = 0;
         for (int i = 3; i <= 88; i++) crc ^= request[i];
         request[89] = crc;
@@ -90,7 +128,7 @@ public static class BatteryService
             return null;
         }
 
-        Thread.Sleep(100);
+        Thread.Sleep(50);
         byte[] response = new byte[91];
         response[0] = 0x00;
 

@@ -6,7 +6,10 @@ internal static class Program
     private static void Main()
     {
         ApplicationConfiguration.Initialize();
-        //BatteryService.DumpVenderHidDevices();
+        //BatteryService.DumpVenderHidDevices(); // debug
         Application.Run(new BatteryTrayContext());
     }
+
+
+
 }

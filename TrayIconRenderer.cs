@@ -9,10 +9,11 @@ public static class TrayIconRenderer
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyIcon(IntPtr hIcon);
 
-    public static Icon CreatePercentageIcon(int percentage, DeviceType type, bool isLightTaskbar)
+    
+    public static Icon CreateGlyphIcon(DeviceType type, int percentage, bool isLightTaskbar)
     {
-        // 48x48 = nicer side by side on windows 11
-        const int size = 48;
+        // 32x32 for more uniform sizing in numbers and icons
+        const int size = 32;
         using var bitmap = new Bitmap(size, size);
         using var g = Graphics.FromImage(bitmap);
 
@@ -20,12 +21,7 @@ public static class TrayIconRenderer
         g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
         g.Clear(Color.Transparent);
 
-        Color color = percentage switch
-        {
-            <= 15 => Color.FromArgb(255, 85, 85),   // Red
-            <= 40 => Color.FromArgb(255, 193, 7),   // Amber
-            _ => isLightTaskbar ? Color.Black : Color.White
-        };
+        Color color = GetBatteryColor(percentage, isLightTaskbar);
 
         string glyph = type switch
         {
@@ -34,12 +30,35 @@ public static class TrayIconRenderer
             _ => "\uE83F"                    // generic device
         };
 
+        using var brush = new SolidBrush(color);
+        using var font = new Font("Segoe Fluent Icons", 26f, FontStyle.Regular, GraphicsUnit.Pixel);
+        using var format = new StringFormat
+        {
+            Alignment = StringAlignment.Center,
+            LineAlignment = StringAlignment.Center,
+        };
+
+        g.DrawString(glyph, font, brush, new RectangleF(0, 0, size, size), format);
+
+        return ConvertBitmapToIcon(bitmap);
+    }
+
+    public static Icon CreateNumberIcon(int percentage, bool isLightTaskbar)
+    {
+        const int size = 50;
+        using var bitmap = new Bitmap(size, size);
+        using var g = Graphics.FromImage(bitmap);
+
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+        g.Clear(Color.Transparent);
+
+        Color color = GetBatteryColor(percentage, isLightTaskbar);
         string label = percentage >= 100 ? "100" : percentage.ToString();
-        float numberFontSize = percentage >= 100 ? 15f : 20f;
+        float fontSize = percentage >= 100 ? 17f : 32f;
 
         using var brush = new SolidBrush(color);
-        using var iconFont = new Font("Segoe Fluent Icons", 20f, FontStyle.Regular, GraphicsUnit.Pixel);
-        using var textFont = new Font("Segoe UI", numberFontSize, FontStyle.Bold, GraphicsUnit.Pixel);
+        using var font = new Font("Segoe UI", fontSize, FontStyle.Regular, GraphicsUnit.Pixel);
         using var format = new StringFormat
         {
             Alignment = StringAlignment.Center,
@@ -47,20 +66,33 @@ public static class TrayIconRenderer
             FormatFlags = StringFormatFlags.NoWrap,
         };
 
-        // left side win11 glyph
-        var iconRect = new RectangleF(-2, 0, 22, size);
-        g.DrawString(glyph, iconFont, brush, iconRect, format);
+        g.DrawString(label, font, brush, new RectangleF(0, 0, size, size));
 
-        // right side battery num
-        var textRect = new RectangleF(18, 0, 31, size);
-        g.DrawString(label, textFont, brush, textRect, format);
+        return ConvertBitmapToIcon(bitmap);
+    }
 
+    private static Color GetBatteryColor(int percentage, bool isLightTaskbar)
+    {
+        Color color = percentage switch
+        {
+            <= 15 => Color.FromArgb(255, 85, 85),
+            <= 40 => Color.FromArgb(255, 193, 7),
+            _ => isLightTaskbar ? Color.Black : Color.White
+        };
+        return color;
+    }
+
+    private static Icon ConvertBitmapToIcon(Bitmap bitmap)
+    {
         IntPtr hIcon = bitmap.GetHicon();
         try
         {
             using var tempIcon = Icon.FromHandle(hIcon);
             return (Icon)tempIcon.Clone();
         }
-        finally { DestroyIcon(hIcon); }
+        finally
+        {
+            DestroyIcon(hIcon);
+        }
     }
 }
